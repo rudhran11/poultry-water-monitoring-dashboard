@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Poultry Water Monitoring Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f7fb;
+      color: #172033;
+    }
+    header {
+      background: #172033;
+      color: white;
+      padding: 22px 28px;
+    }
+    header h1 { margin: 0 0 6px; font-size: 25px; }
+    header p { margin: 0; opacity: .8; }
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 7px;
+      background: #888;
+    }
+    main { max-width: 1250px; margin: 24px auto; padding: 0 18px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .card, .chart-card {
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 4px 18px rgba(0,0,0,.07);
+    }
+    .label {
+      font-size: 14px;
+      color: #687386;
+      margin-bottom: 10px;
+    }
+    .value {
+      font-size: 30px;
+      font-weight: 700;
+    }
+    .unit { font-size: 15px; font-weight: 400; color: #687386; }
+    .sub {
+      margin-top: 8px;
+      color: #7a8495;
+      font-size: 13px;
+    }
+    .warning { color: #b26a00; }
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .chart-card h2 {
+      font-size: 17px;
+      margin: 0 0 16px;
+    }
+    .chart-wrap { height: 300px; }
+    .footer {
+      margin-top: 18px;
+      color: #778195;
+      font-size: 13px;
+    }
+    @media (max-width: 850px) {
+      .grid, .charts { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>AI-Based Poultry Water Monitoring System</h1>
+  <p>Firebase Realtime Database — live sensor dashboard</p>
+  <div class="status">
+    <span id="statusDot" class="dot"></span>
+    <span id="statusText">Connecting to Firebase...</span>
+  </div>
+</header>
+
+<main>
+  <section class="grid">
+    <div class="card">
+      <div class="label">Temperature</div>
+      <div class="value"><span id="temperature">--</span> <span class="unit">°C</span></div>
+    </div>
+
+    <div class="card">
+      <div class="label">Turbidity</div>
+      <div class="value"><span id="turbidityVoltage">--</span> <span class="unit">V</span></div>
+      <div class="sub">Raw: <span id="turbidityRaw">--</span></div>
+    </div>
+
+    <div class="card">
+      <div class="label">TDS</div>
+      <div class="value"><span id="tdsVoltage">--</span> <span class="unit">V</span></div>
+      <div class="sub">Raw: <span id="tdsRaw">--</span></div>
+    </div>
+
+    <div class="card">
+      <div class="label">pH</div>
+      <div class="value"><span id="ph">--</span></div>
+      <div id="phStatus" class="sub warning">Waiting for calibration</div>
+      <div class="sub">Voltage: <span id="phVoltage">--</span> V | Raw: <span id="phRaw">--</span></div>
+    </div>
+
+    <div class="card">
+      <div class="label">Flow Rate</div>
+      <div class="value"><span id="flowRate">--</span> <span class="unit">L/min</span></div>
+    </div>
+
+    <div class="card">
+      <div class="label">Total Water</div>
+      <div class="value"><span id="totalLitres">--</span> <span class="unit">L</span></div>
+    </div>
+  </section>
+
+  <section class="charts">
+    <div class="chart-card">
+      <h2>Temperature Trend</h2>
+      <div class="chart-wrap"><canvas id="temperatureChart"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <h2>Flow Rate Trend</h2>
+      <div class="chart-wrap"><canvas id="flowChart"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <h2>Turbidity Voltage Trend</h2>
+      <div class="chart-wrap"><canvas id="turbidityChart"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <h2>TDS Voltage Trend</h2>
+      <div class="chart-wrap"><canvas id="tdsChart"></canvas></div>
+    </div>
+  </section>
+
+  <div class="footer">
+    Last Firebase update: <span id="lastUpdate">--</span>
+    · Data path: /water_monitoring/records
+  </div>
+</main>
+
+<script type="module">
+  import { initializeApp } from
+    "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+
+  import {
+    getDatabase,
+    ref,
+    query,
+    orderByKey,
+    limitToLast,
+    onValue
+  } from
+    "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+
+  import {
+    getAuth,
+    signInAnonymously
+  } from
+    "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCGIq7tiNdNSuslra07g4bbIdjYpRlfb_I",
+    authDomain: "poultry-water-monitoring.firebaseapp.com",
+    databaseURL: "https://poultry-water-monitoring-default-rtdb.firebaseio.com",
+    projectId: "poultry-water-monitoring",
+    storageBucket: "poultry-water-monitoring.firebasestorage.app",
+    messagingSenderId: "313381175380",
+    appId: "1:313381175380:web:2c133bb25935424f93edc1",
+    measurementId: "G-1PLE621H9T"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const auth = getAuth(app);
+
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+
+  function setStatus(ok, message) {
+    statusDot.style.background = ok ? "#19a463" : "#d64545";
+    statusText.textContent = message;
+  }
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    scales: {
+      y: { beginAtZero: false }
+    }
+  };
+
+  const temperatureChart = new Chart(
+    document.getElementById("temperatureChart"),
+    {
+      type: "line",
+      data: { labels: [], datasets: [{
+        label: "Temperature (°C)",
+        data: [],
+        tension: 0.25
+      }]},
+      options: chartOptions
+    }
+  );
+
+  const flowChart = new Chart(
+    document.getElementById("flowChart"),
+    {
+      type: "line",
+      data: { labels: [], datasets: [{
+        label: "Flow (L/min)",
+        data: [],
+        tension: 0.25
+      }]},
+      options: chartOptions
+    }
+  );
+
+  const turbidityChart = new Chart(
+    document.getElementById("turbidityChart"),
+    {
+      type: "line",
+      data: { labels: [], datasets: [{
+        label: "Turbidity Voltage (V)",
+        data: [],
+        tension: 0.25
+      }]},
+      options: chartOptions
+    }
+  );
+
+  const tdsChart = new Chart(
+    document.getElementById("tdsChart"),
+    {
+      type: "line",
+      data: { labels: [], datasets: [{
+        label: "TDS Voltage (V)",
+        data: [],
+        tension: 0.25
+      }]},
+      options: chartOptions
+    }
+  );
+
+  function updateChart(chart, labels, values) {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = values;
+    chart.update();
+  }
+
+  function numberValue(v, digits = 2) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(digits) : "--";
+  }
+
+  async function startDashboard() {
+    try {
+      await signInAnonymously(auth);
+      setStatus(true, "Firebase connected · Anonymous user authenticated");
+
+      const recordsRef = query(
+        ref(db, "water_monitoring/records"),
+        orderByKey(),
+        limitToLast(30)
+      );
+
+      onValue(recordsRef, (snapshot) => {
+        const records = [];
+
+        snapshot.forEach((child) => {
+          records.push({
+            id: child.key,
+            ...child.val()
+          });
+        });
+
+        if (!records.length) {
+          setStatus(true, "Firebase connected · Waiting for sensor data");
+          return;
+        }
+
+        const latest = records[records.length - 1];
+
+        document.getElementById("temperature").textContent =
+          numberValue(latest.temperature);
+
+        document.getElementById("turbidityVoltage").textContent =
+          numberValue(latest.turbidity_voltage, 3);
+
+        document.getElementById("turbidityRaw").textContent =
+          latest.turbidity_raw ?? "--";
+
+        document.getElementById("tdsVoltage").textContent =
+          numberValue(latest.tds_voltage, 3);
+
+        document.getElementById("tdsRaw").textContent =
+          latest.tds_raw ?? "--";
+
+        document.getElementById("ph").textContent =
+          numberValue(latest.ph);
+
+        document.getElementById("phVoltage").textContent =
+          numberValue(latest.ph_voltage, 3);
+
+        document.getElementById("phRaw").textContent =
+          latest.ph_raw ?? "--";
+
+        document.getElementById("flowRate").textContent =
+          numberValue(latest.flow_rate, 3);
+
+        document.getElementById("totalLitres").textContent =
+          numberValue(latest.total_litres, 3);
+
+        document.getElementById("phStatus").textContent =
+          latest.ph_calibrated === true
+            ? "Calibrated"
+            : "UNCALIBRATED — do not use for ML yet";
+
+        document.getElementById("phStatus").className =
+          latest.ph_calibrated === true
+            ? "sub"
+            : "sub warning";
+
+        document.getElementById("lastUpdate").textContent =
+          latest.timestamp ?? "--";
+
+        const labels = records.map(r => {
+          if (!r.timestamp) return "--";
+          const parts = String(r.timestamp).split(" ");
+          return parts.length > 1 ? parts[1] : parts[0];
+        });
+
+        updateChart(
+          temperatureChart,
+          labels,
+          records.map(r => Number(r.temperature) || null)
+        );
+
+        updateChart(
+          flowChart,
+          labels,
+          records.map(r => Number(r.flow_rate) || 0)
+        );
+
+        updateChart(
+          turbidityChart,
+          labels,
+          records.map(r => Number(r.turbidity_voltage) || 0)
+        );
+
+        updateChart(
+          tdsChart,
+          labels,
+          records.map(r => Number(r.tds_voltage) || 0)
+        );
+
+        setStatus(
+          true,
+          "LIVE · Firebase Realtime Database"
+        );
+      }, (error) => {
+        console.error(error);
+        setStatus(false, "Firebase read error: " + error.message);
+      });
+
+    } catch (error) {
+      console.error(error);
+      setStatus(false, "Firebase authentication failed: " + error.message);
+    }
+  }
+
+  startDashboard();
+</script>
+</body>
+</html>
