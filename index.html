@@ -155,7 +155,7 @@
 
   <div class="footer">
     Last Firebase update: <span id="lastUpdate">--</span>
-    · Data path: /water_monitoring/records
+    · Data path: /water_monitoring/records · pH/TDS/turbidity demo values are simulated when active
   </div>
 </main>
 
@@ -287,6 +287,18 @@
       tds: 100 + wave(2) * 250,                // 100–350 ppm
       turbidity: 0.5 + wave(3) * 3.0           // 0.5–3.5 NTU
     };
+  }
+
+
+  // DEMO DISPLAY ONLY: pH/TDS/turbidity stay at zero when their sensor is at rest.
+  // When a sensor shows a non-zero raw reading, display an illustrative water-like value.
+  // These are simulated display values, not calibrated sensor measurements.
+  function demoValue(raw, min, max, digits = 2) {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    // Keep the displayed value inside the example range while varying with sensor activity.
+    const fraction = Math.min(n / 4095, 1);
+    return (min + fraction * (max - min)).toFixed(digits);
   }
 
   async function startDashboard() {
