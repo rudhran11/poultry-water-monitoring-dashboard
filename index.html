@@ -84,10 +84,7 @@
 <body>
 <header>
   <h1>AI-Based Poultry Water Monitoring System</h1>
-  <p>Firebase sensor dashboard · pH/TDS/turbidity demo values are simulated</p>
-  <div class="status">
-    <strong>DEMO MODE:</strong> pH, TDS and turbidity are simulated; temperature and flow are live Firebase values.
-  </div>
+  <p>Firebase Realtime Database — live sensor dashboard</p>
   <div class="status">
     <span id="statusDot" class="dot"></span>
     <span id="statusText">Connecting to Firebase...</span>
@@ -102,22 +99,22 @@
     </div>
 
     <div class="card">
-      <div class="label">Turbidity (SIMULATED)</div>
-      <div class="value"><span id="turbidityVoltage">--</span> <span class="unit">NTU</span></div>
-      <div class="sub">Raw ADC: <span id="turbidityRaw">--</span></div>
+      <div class="label">Turbidity</div>
+      <div class="value"><span id="turbidityVoltage">--</span> <span class="unit">V</span></div>
+      <div class="sub">Raw: <span id="turbidityRaw">--</span></div>
     </div>
 
     <div class="card">
-      <div class="label">TDS (SIMULATED)</div>
-      <div class="value"><span id="tdsVoltage">--</span> <span class="unit">ppm</span></div>
-      <div class="sub">Raw ADC: <span id="tdsRaw">--</span></div>
+      <div class="label">TDS</div>
+      <div class="value"><span id="tdsVoltage">--</span> <span class="unit">V</span></div>
+      <div class="sub">Raw: <span id="tdsRaw">--</span></div>
     </div>
 
     <div class="card">
-      <div class="label">pH (SIMULATED)</div>
+      <div class="label">pH</div>
       <div class="value"><span id="ph">--</span></div>
       <div id="phStatus" class="sub warning">Waiting for calibration</div>
-      <div class="sub">Raw voltage: <span id="phVoltage">--</span> V | Raw ADC: <span id="phRaw">--</span></div>
+      <div class="sub">Voltage: <span id="phVoltage">--</span> V | Raw: <span id="phRaw">--</span></div>
     </div>
 
     <div class="card">
@@ -143,19 +140,19 @@
     </div>
 
     <div class="chart-card">
-      <h2>Simulated Turbidity Trend (NTU)</h2>
+      <h2>Turbidity Voltage Trend</h2>
       <div class="chart-wrap"><canvas id="turbidityChart"></canvas></div>
     </div>
 
     <div class="chart-card">
-      <h2>Simulated TDS Trend (ppm)</h2>
+      <h2>TDS Voltage Trend</h2>
       <div class="chart-wrap"><canvas id="tdsChart"></canvas></div>
     </div>
   </section>
 
   <div class="footer">
     Last Firebase update: <span id="lastUpdate">--</span>
-    · Data path: /water_monitoring/records · pH/TDS/turbidity values are estimates and require sensor calibration
+    · Data path: /water_monitoring/records
   </div>
 </main>
 
@@ -242,7 +239,7 @@
     {
       type: "line",
       data: { labels: [], datasets: [{
-        label: "Simulated Turbidity (NTU)",
+        label: "Turbidity Voltage (V)",
         data: [],
         tension: 0.25
       }]},
@@ -255,7 +252,7 @@
     {
       type: "line",
       data: { labels: [], datasets: [{
-        label: "Simulated TDS (ppm)",
+        label: "TDS Voltage (V)",
         data: [],
         tension: 0.25
       }]},
@@ -272,33 +269,6 @@
   function numberValue(v, digits = 2) {
     const n = Number(v);
     return Number.isFinite(n) ? n.toFixed(digits) : "--";
-  }
-
-  // DEMO ONLY: generate plausible display values for pH, TDS and turbidity.
-  // Temperature, flow_rate and total_litres remain the original Firebase readings.
-  // Raw ADC/voltage fields remain visible for troubleshooting. These are NOT measured values.
-  let demoTick = 0;
-  function simulatedWaterValues(record) {
-    demoTick += 1;
-    const seed = Number(record.id?.replace(/\D/g, "").slice(-6)) || demoTick * 37;
-    const wave = (n) => (Math.sin((seed + n * 19) * 0.17) + 1) / 2;
-    return {
-      ph: 6.8 + wave(1) * 0.6,                 // 6.8–7.4 pH
-      tds: 100 + wave(2) * 250,                // 100–350 ppm
-      turbidity: 0.5 + wave(3) * 3.0           // 0.5–3.5 NTU
-    };
-  }
-
-
-  // Display estimates only: pH/TDS/turbidity stay at zero when their sensor is at rest.
-  // When a sensor shows a non-zero raw reading, display an illustrative water-like value.
-  // These are illustrative estimates, not calibrated sensor measurements.
-  function demoValue(raw, min, max, digits = 2) {
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    // Keep the displayed value inside the example range while varying with sensor activity.
-    const fraction = Math.min(n / 4095, 1);
-    return (min + fraction * (max - min)).toFixed(digits);
   }
 
   async function startDashboard() {
@@ -332,21 +302,20 @@
         document.getElementById("temperature").textContent =
           numberValue(latest.temperature);
 
-        const demoWater = simulatedWaterValues(latest);
         document.getElementById("turbidityVoltage").textContent =
-          numberValue(demoWater.turbidity, 2);
+          numberValue(latest.turbidity_voltage, 3);
 
         document.getElementById("turbidityRaw").textContent =
           latest.turbidity_raw ?? "--";
 
         document.getElementById("tdsVoltage").textContent =
-          numberValue(demoWater.tds, 0);
+          numberValue(latest.tds_voltage, 3);
 
         document.getElementById("tdsRaw").textContent =
           latest.tds_raw ?? "--";
 
         document.getElementById("ph").textContent =
-          numberValue(demoWater.ph);
+          numberValue(latest.ph);
 
         document.getElementById("phVoltage").textContent =
           numberValue(latest.ph_voltage, 3);
@@ -361,9 +330,14 @@
           numberValue(latest.total_litres, 3);
 
         document.getElementById("phStatus").textContent =
-          "SIMULATED DEMO VALUE — not calibrated sensor data";
+          latest.ph_calibrated === true
+            ? "Calibrated"
+            : "UNCALIBRATED — do not use for ML yet";
 
-        document.getElementById("phStatus").className = "sub warning";
+        document.getElementById("phStatus").className =
+          latest.ph_calibrated === true
+            ? "sub"
+            : "sub warning";
 
         document.getElementById("lastUpdate").textContent =
           latest.timestamp ?? "--";
@@ -389,13 +363,13 @@
         updateChart(
           turbidityChart,
           labels,
-          records.map(r => simulatedWaterValues(r).turbidity)
+          records.map(r => Number(r.turbidity_voltage) || 0)
         );
 
         updateChart(
           tdsChart,
           labels,
-          records.map(r => simulatedWaterValues(r).tds)
+          records.map(r => Number(r.tds_voltage) || 0)
         );
 
         setStatus(
